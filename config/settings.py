@@ -147,3 +147,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 AUTH_USER_MODEL = 'accounts.User'
+
+SIMPLE_JWT = {
+    'SIGNING_KEY': config('JWT_SIGNING_KEY'),
+}
