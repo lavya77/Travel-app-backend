@@ -1,3 +1,4 @@
+
 from django.conf import settings
 from django.db import models
 
@@ -44,7 +45,8 @@ class Trip(models.Model):
 
     def __str__(self):
         return f"{self.source} to {self.destination}"
-    
+
+
 class TransportOption(models.Model):
 
     TRANSPORT_TYPES = [
@@ -90,7 +92,6 @@ class TransportOption(models.Model):
         return f"{self.transport_type}: {self.origin} to {self.destination}"
 
 
-
 class Accommodation(models.Model):
 
     ACCOMMODATION_TYPES = [
@@ -107,6 +108,15 @@ class Accommodation(models.Model):
         related_name='accommodations'
     )
 
+    # Links a trip's accommodation option to the OSM hotel record.
+    hotel = models.ForeignKey(
+        'destinations.Hotel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='trip_accommodations'
+    )
+
     name = models.CharField(max_length=200)
 
     accommodation_type = models.CharField(
@@ -116,6 +126,7 @@ class Accommodation(models.Model):
 
     location = models.CharField(max_length=255)
 
+    # Actual or user-provided quoted price, not an OSM price.
     price_per_night = models.DecimalField(
         max_digits=10,
         decimal_places=2

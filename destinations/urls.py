@@ -1,6 +1,12 @@
+
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .views import DestinationViewSet, PlaceViewSet
+from .views import (
+    DestinationViewSet,
+    PlaceViewSet,
+    search_destination
+)
 
 router = DefaultRouter()
 
@@ -16,4 +22,12 @@ router.register(
     basename='place'
 )
 
-urlpatterns = router.urls
+urlpatterns = [
+    path(
+        'destinations/search/',
+        search_destination,
+        name='search-destination'
+    ),
+]
+
+urlpatterns += router.urls

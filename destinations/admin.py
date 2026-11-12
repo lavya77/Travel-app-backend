@@ -1,5 +1,6 @@
+
 from django.contrib import admin
-from .models import Destination, Place
+from .models import Destination, Place, Hotel
 
 
 @admin.register(Destination)
@@ -20,3 +21,18 @@ class PlaceAdmin(admin.ModelAdmin):
 
     list_filter = ('category', 'destination')
     search_fields = ('name',)
+
+
+@admin.register(Hotel)
+class HotelAdmin(admin.ModelAdmin):
+    list_display = (
+        'name',
+        'destination',
+        'category',
+        'city',
+        'phone',
+    )
+
+    list_filter = ('category', 'destination')
+    search_fields = ('name', 'city', 'street')
+    readonly_fields = ('created_at', 'updated_at')

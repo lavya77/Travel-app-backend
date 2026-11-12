@@ -1,8 +1,8 @@
-# Virtual environment
+# Virtual environments
 venv/
 env/
 
-# Environment variables
+# Environment variables and secrets
 .env
 .env.*
 
@@ -10,8 +10,8 @@ env/
 __pycache__/
 *.py[cod]
 
-# Django
-db.sqlite3
+# Django and local databases
+*.sqlite3
 media/
 staticfiles/
 

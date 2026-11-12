@@ -1,7 +1,9 @@
+
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
 from .models import Trip, TransportOption, Accommodation
+
 from .serializers import (
     TripSerializer,
     TransportOptionSerializer,
@@ -14,7 +16,9 @@ class TripViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Trip.objects.filter(user=self.request.user)
+        return Trip.objects.filter(
+            user=self.request.user
+        )
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -25,8 +29,10 @@ class TransportOptionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return TransportOption.objects.filter(
-            trip__user=self.request.user
+        return (
+            TransportOption.objects
+            .filter(trip__user=self.request.user)
+            .select_related('trip')
         )
 
 
@@ -35,6 +41,8 @@ class AccommodationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Accommodation.objects.filter(
-            trip__user=self.request.user
+        return (
+            Accommodation.objects
+            .filter(trip__user=self.request.user)
+            .select_related('trip', 'hotel', 'hotel__destination')
         )
