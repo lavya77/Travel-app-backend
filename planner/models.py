@@ -1,13 +1,13 @@
 
+from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 
 
 class Plan(models.Model):
 
     PLAN_TYPES = [
-        ('economy', 'Economy'),
-        ('balanced', 'Balanced'),
-        ('convenience', 'Convenience'),
+        ('optimal', 'Optimal'),
     ]
 
     trip = models.ForeignKey(
@@ -18,19 +18,28 @@ class Plan(models.Model):
 
     plan_type = models.CharField(
         max_length=20,
-        choices=PLAN_TYPES
+        choices=PLAN_TYPES,
+        default='optimal'
     )
 
     estimated_cost = models.DecimalField(
         max_digits=12,
-        decimal_places=2
-    )
-
-    estimated_effort = models.FloatField(
+        decimal_places=2,
         default=0
     )
 
+    estimated_effort = models.FloatField(default=0)
+
+    # Stores the complete generated planner response for GET requests.
+    response_data = models.JSONField(
+        default=dict,
+        blank=True
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.trip} - {self.plan_type}"
@@ -55,19 +64,15 @@ class ItineraryItem(models.Model):
     )
 
     start_time = models.TimeField()
-
     end_time = models.TimeField()
 
     order = models.PositiveIntegerField()
 
-    def __str__(self):
-        return f"Day {self.day} - {self.plan}"
-    
     class Meta:
         ordering = ['day', 'order']
 
-from django.conf import settings
-from django.core.validators import MinValueValidator, MaxValueValidator
+    def __str__(self):
+        return f"Day {self.day} - {self.plan}"
 
 
 class Feedback(models.Model):

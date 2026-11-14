@@ -33,6 +33,10 @@ class PlanSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    response_data = serializers.JSONField(
+        read_only=True
+    )
+
     class Meta:
         model = Plan
 
@@ -44,7 +48,21 @@ class PlanSerializer(serializers.ModelSerializer):
             'estimated_effort',
             'created_at',
             'itinerary_items',
+            'response_data',
         ]
+
+    def to_representation(self, instance):
+        """
+        Return the complete saved planner response.
+
+        This makes the Latest Plan endpoint return the same
+        JSON structure as the Generate Plan endpoint.
+        """
+
+        if instance.response_data:
+            return instance.response_data
+
+        return super().to_representation(instance)
 
 
 class FeedbackSerializer(serializers.ModelSerializer):
