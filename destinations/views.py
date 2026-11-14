@@ -1,33 +1,38 @@
 
-from rest_framework import viewsets, status
+from rest_framework import status, viewsets
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from .models import Destination, Place
-from .serializers import DestinationSerializer, PlaceSerializer
+from .serializers import (
+    DestinationSerializer,
+    PlaceSerializer,
+)
 
 from integrations.save_places import fetch_and_save_city_places
 
 
 class DestinationViewSet(viewsets.ReadOnlyModelViewSet):
+
     queryset = Destination.objects.all()
     serializer_class = DestinationSerializer
     permission_classes = [AllowAny]
 
 
 class PlaceViewSet(viewsets.ReadOnlyModelViewSet):
+
     queryset = Place.objects.all()
     serializer_class = PlaceSerializer
     permission_classes = [AllowAny]
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def search_destination(request):
 
-    city = request.data.get("city")
-    state = request.data.get("state")
+    city = request.data.get("city", "").strip()
+    state = request.data.get("state", "").strip()
 
     if not city or not state:
         return Response(
@@ -36,23 +41,47 @@ def search_destination(request):
         )
 
     try:
+
         result = fetch_and_save_city_places(city, state)
 
         if result.get("total_places_received", 0) == 0:
-            return Response(result, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                result,
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        destination = Destination.objects.get(name=city)
+        # Case-insensitive lookup.
+        destination = (
+            Destination.objects
+            .filter(name__iexact=city)
+            .order_by("id")
+            .first()
+        )
 
-        places = Place.objects.filter(destination=destination)
+        if not destination:
+            return Response(
+                {"error": "Destination could not be found after saving."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        return Response({
-            "message": "Places fetched and saved successfully.",
-            "result": result,
-            "places": PlaceSerializer(places, many=True).data
-        }, status=status.HTTP_200_OK)
+        places = Place.objects.filter(
+            destination=destination
+        )
 
-    except Exception as error:
         return Response(
-            {"error": str(error)},
+            {
+                "message": "Places fetched and saved successfully.",
+                "result": result,
+                "places": PlaceSerializer(
+                    places,
+                    many=True
+                ).data,
+            },
+            status=status.HTTP_200_OK
+        )
+
+    except Exception:
+        return Response(
+            {"error": "Unable to search and save destination places."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

@@ -1,18 +1,30 @@
 
 from django.db import models
+from django.db.models.functions import Lower
 
 
 class Destination(models.Model):
 
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=150)
 
     state = models.CharField(max_length=100)
 
-    country = models.CharField(max_length=100, default="India")
+    country = models.CharField(
+        max_length=100,
+        default="India"
+    )
 
     description = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower("name"),
+                name="unique_destination_name_case_insensitive"
+            )
+        ]
 
     def __str__(self):
         return f"{self.name}, {self.state}"
@@ -38,7 +50,6 @@ class Place(models.Model):
 
     name = models.CharField(max_length=200)
 
-    # Unique OpenStreetMap ID to prevent duplicate places
     osm_id = models.CharField(
         max_length=50,
         unique=True,
