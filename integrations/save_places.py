@@ -124,7 +124,7 @@ def save_places_to_database(
 
 def fetch_and_save_city_places(city_name, state):
 
-    places = search_places_by_city(city_name)
+    places = search_places_by_city(city_name, state)
 
     if not places:
         return {
@@ -192,7 +192,7 @@ def save_hotels_to_database(
 
 def fetch_and_save_city_hotels(city_name, state):
 
-    hotels = search_hotels_by_city(city_name)
+    hotels = search_hotels_by_city(city_name, state)
 
     if not hotels:
         return {

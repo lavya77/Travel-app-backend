@@ -4,13 +4,22 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from .models import Destination, Place
+import logging
+
+from .models import Destination, Place, Hotel
 from .serializers import (
     DestinationSerializer,
     PlaceSerializer,
+    HotelSerializer,
 )
 
-from integrations.save_places import fetch_and_save_city_places
+from integrations.save_places import (
+    fetch_and_save_city_places,
+    fetch_and_save_city_hotels,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class DestinationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -68,12 +77,39 @@ def search_destination(request):
             destination=destination
         )
 
+        # Also fetch and save hotels so hotel search and the planner's
+        # hotel recommendations work for newly discovered cities.
+        # Places are already saved, so a hotel failure must not fail
+        # the whole request.
+        try:
+            hotels_result = fetch_and_save_city_hotels(city, state)
+        except Exception:
+            logger.exception("Hotel discovery failed for %s", city)
+            hotels_result = {
+                "destination": city,
+                "new_hotels_saved": 0,
+                "total_hotels_received": 0,
+                "error": (
+                    "Hotels could not be fetched right now. "
+                    "Places were saved; try again later."
+                ),
+            }
+
+        hotels = Hotel.objects.filter(
+            destination=destination
+        ).order_by("name")
+
         return Response(
             {
-                "message": "Places fetched and saved successfully.",
+                "message": "Places and hotels fetched and saved successfully.",
                 "result": result,
+                "hotels_result": hotels_result,
                 "places": PlaceSerializer(
                     places,
+                    many=True
+                ).data,
+                "hotels": HotelSerializer(
+                    hotels,
                     many=True
                 ).data,
             },
@@ -81,6 +117,7 @@ def search_destination(request):
         )
 
     except Exception:
+        logger.exception("Destination discovery failed for %s", city)
         return Response(
             {"error": "Unable to search and save destination places."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

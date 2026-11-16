@@ -1,5 +1,7 @@
 
 import logging
+import time
+
 import requests
 
 from integrations.geocoding import get_coordinates
@@ -15,18 +17,46 @@ HEADERS = {
 }
 
 
+RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+
+OVERPASS_ATTEMPTS = 3
+
+
 def fetch_overpass_data(query):
-    """Execute an Overpass API query."""
+    """
+    Execute an Overpass API query.
 
-    response = requests.post(
-        OVERPASS_URL,
-        data={"data": query},
-        headers=HEADERS,
-        timeout=60
-    )
+    The public Overpass server often returns temporary 429/502/503/504
+    errors (especially for back-to-back place and hotel queries), so
+    these are retried with a short backoff.
+    """
 
-    response.raise_for_status()
-    return response.json()
+    for attempt in range(1, OVERPASS_ATTEMPTS + 1):
+
+        response = requests.post(
+            OVERPASS_URL,
+            data={"data": query},
+            headers=HEADERS,
+            timeout=60
+        )
+
+        if (
+            response.status_code in RETRYABLE_STATUS_CODES
+            and attempt < OVERPASS_ATTEMPTS
+        ):
+            wait_seconds = 2 * attempt
+            logger.warning(
+                "Overpass returned %s (attempt %s/%s); retrying in %ss",
+                response.status_code,
+                attempt,
+                OVERPASS_ATTEMPTS,
+                wait_seconds
+            )
+            time.sleep(wait_seconds)
+            continue
+
+        response.raise_for_status()
+        return response.json()
 
 
 # ---------------- TOURIST PLACES SEARCH ----------------
@@ -104,10 +134,10 @@ def get_places_from_osm(latitude, longitude, radius=5000):
     return places
 
 
-def search_places_by_city(city_name, radius=5000):
-    """Geocode a city and retrieve its nearby places."""
+def search_places_by_city(city_name, state=None, radius=5000):
+    """Geocode a city (within India) and retrieve its nearby places."""
 
-    location = get_coordinates(city_name)
+    location = get_coordinates(city_name, state)
 
     if not location:
         return []
@@ -189,10 +219,10 @@ def get_hotels_from_osm(latitude, longitude, radius=5000):
     return hotels
 
 
-def search_hotels_by_city(city_name, radius=5000):
-    """Geocode a city and retrieve nearby accommodation."""
+def search_hotels_by_city(city_name, state=None, radius=5000):
+    """Geocode a city (within India) and retrieve nearby accommodation."""
 
-    location = get_coordinates(city_name)
+    location = get_coordinates(city_name, state)
 
     if not location:
         return []

@@ -2,14 +2,23 @@
 import requests
 
 
-def get_coordinates(city_name):
+def get_coordinates(city_name, state=None):
 
     url = "https://nominatim.openstreetmap.org/search"
 
+    # Include the state and country so that same-named places abroad
+    # (e.g. Vasco da Gama in Brazil) are not picked instead.
+    query = (
+        f"{city_name}, {state}, India"
+        if state
+        else f"{city_name}, India"
+    )
+
     params = {
-        "q": city_name,
+        "q": query,
         "format": "json",
-        "limit": 1
+        "limit": 1,
+        "countrycodes": "in",  # only search inside India
     }
 
     headers = {
