@@ -160,3 +160,10 @@ SIMPLE_JWT = {
     'SIGNING_KEY': config('JWT_SIGNING_KEY', default=SECRET_KEY),
 }
 
+CLOUDFLARE_ACCOUNT_ID = config('CLOUDFLARE_ACCOUNT_ID', default='')
+CLOUDFLARE_API_TOKEN = config('CLOUDFLARE_API_TOKEN', default='')
+CLOUDFLARE_AI_MODEL = config(
+    'CLOUDFLARE_AI_MODEL',
+    default='@cf/qwen/qwen3.8-27b',
+)
+

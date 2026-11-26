@@ -249,6 +249,19 @@ def generate_plan(request, trip_id):
         user=request.user
     )
 
+    if not isinstance(request.data, dict):
+        return Response(
+            {"error": "The request body must be a JSON object."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    use_ai = request.data.get("use_ai", False)
+    if not isinstance(use_ai, bool):
+        return Response(
+            {"error": "use_ai must be a boolean."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     if trip.end_date < trip.start_date:
         return Response(
             {"error": "Trip end date cannot be before start date."},
@@ -263,7 +276,7 @@ def generate_plan(request, trip_id):
 
     try:
         with transaction.atomic():
-            result = generate_optimal_plan(trip)
+            result = generate_optimal_plan(trip, use_ai=use_ai)
 
             plan = get_object_or_404(
                 Plan.objects.select_for_update(),

@@ -11,6 +11,7 @@ from django.utils.dateparse import parse_datetime
 
 from destinations.models import Place, Hotel
 from integrations.flights import search_flights
+from planner.ai import build_ai_schedule
 from planner.models import Plan, ItineraryItem
 from trips.models import TransportOption, Accommodation
 
@@ -519,7 +520,7 @@ def get_other_place_recommendations(places):
 
 # ---------------- SIGHTSEEING ITINERARY ----------------
 
-def build_daily_schedule(places, trip):
+def build_daily_schedule(places, trip, ai_days=None):
     """Distribute sightseeing across trip days and group nearby places."""
 
     candidates = [
@@ -537,55 +538,73 @@ def build_daily_schedule(places, trip):
     def visit_duration(place):
         return max(int(place.time_required or 60), 30)
 
-    # Seed each day with a geographically separated attraction.
-    first_seed = min(
-        candidates,
-        key=lambda place: (place_priority(place), -visit_duration(place)),
-    )
+    place_by_id = {place.id: place for place in candidates}
 
-    seeds = [first_seed]
-    remaining = [
-        place for place in candidates
-        if place.id != first_seed.id
-    ]
+    if ai_days is not None:
+        clusters = [
+            {"places": [], "load": 0}
+            for _ in range(total_days)
+        ]
+        ai_ranks = {}
 
-    while len(seeds) < seed_count and remaining:
-        next_seed = max(
-            remaining,
-            key=lambda place: (
-                min(haversine_distance(place, seed) for seed in seeds),
-                -place_priority(place),
-                visit_duration(place),
-            ),
+        for day_number, place_ids in ai_days.items():
+            cluster = clusters[day_number - 1]
+            for rank, place_id in enumerate(place_ids):
+                place = place_by_id[place_id]
+                cluster["places"].append(place)
+                cluster["load"] += visit_duration(place)
+                ai_ranks[(day_number, place_id)] = rank
+    else:
+        # Seed each day with a geographically separated attraction.
+        first_seed = min(
+            candidates,
+            key=lambda place: (place_priority(place), -visit_duration(place)),
         )
 
-        seeds.append(next_seed)
-        remaining.remove(next_seed)
+        seeds = [first_seed]
+        remaining = [
+            place for place in candidates
+            if place.id != first_seed.id
+        ]
 
-    # Balance the remaining workload while preferring nearby clusters.
-    clusters = [
-        {"places": [seed], "load": visit_duration(seed)}
-        for seed in seeds
-    ]
+        while len(seeds) < seed_count and remaining:
+            next_seed = max(
+                remaining,
+                key=lambda place: (
+                    min(haversine_distance(place, seed) for seed in seeds),
+                    -place_priority(place),
+                    visit_duration(place),
+                ),
+            )
 
-    remaining.sort(
-        key=lambda place: (-visit_duration(place), place_priority(place))
-    )
+            seeds.append(next_seed)
+            remaining.remove(next_seed)
 
-    for place in remaining:
-        cluster = min(
-            clusters,
-            key=lambda item: (
-                item["load"]
-                + min(
-                    haversine_distance(place, existing)
-                    for existing in item["places"]
-                ) * 8
-            ),
+        # Balance the remaining workload while preferring nearby clusters.
+        clusters = [
+            {"places": [seed], "load": visit_duration(seed)}
+            for seed in seeds
+        ]
+
+        remaining.sort(
+            key=lambda place: (-visit_duration(place), place_priority(place))
         )
 
-        cluster["places"].append(place)
-        cluster["load"] += visit_duration(place)
+        for place in remaining:
+            cluster = min(
+                clusters,
+                key=lambda item: (
+                    item["load"]
+                    + min(
+                        haversine_distance(place, existing)
+                        for existing in item["places"]
+                    ) * 8
+                ),
+            )
+
+            cluster["places"].append(place)
+            cluster["load"] += visit_duration(place)
+        ai_ranks = {}
 
     scheduled = []
     scheduled_ids = set()
@@ -664,6 +683,8 @@ def build_daily_schedule(places, trip):
             selected = min(
                 feasible,
                 key=lambda item: (
+                    item["distance"]
+                    + ai_ranks.get((day_number, item["place"].id), 0) * 0.5,
                     item["distance"],
                     place_priority(item["place"]),
                     item["place"].name.lower(),
@@ -937,7 +958,7 @@ def get_hotel_recommendations(destination_name):
 # ---------------- MAIN PLANNING ENGINE ----------------
 
 @transaction.atomic
-def generate_optimal_plan(trip):
+def generate_optimal_plan(trip, use_ai=False):
     warnings = []
 
     if trip.end_date < trip.start_date:
@@ -971,11 +992,42 @@ def generate_optimal_plan(trip):
     if not sightseeing_places:
         warnings.append("No sightseeing places were found for this destination.")
 
-    # 3. Build the sightseeing itinerary.
-    itinerary, unscheduled_places = build_daily_schedule(
-        sightseeing_places,
-        trip
-    )
+    # 3. Optionally use AI for day assignments; local rules remain authoritative.
+    ai_days = None
+    ai_provider = None
+    if use_ai and sightseeing_places:
+        ai_days, ai_provider, ai_warning = build_ai_schedule(
+            trip,
+            sightseeing_places,
+        )
+        if ai_warning:
+            warnings.append(ai_warning)
+
+    planner_mode = "rules"
+    if ai_days is not None:
+        itinerary, unscheduled_places = build_daily_schedule(
+            sightseeing_places,
+            trip,
+            ai_days=ai_days,
+        )
+        standard_itinerary, standard_unscheduled = build_daily_schedule(
+            sightseeing_places,
+            trip,
+        )
+        if len(unscheduled_places) > len(standard_unscheduled):
+            itinerary = standard_itinerary
+            unscheduled_places = standard_unscheduled
+            warnings.append(
+                "The AI day assignments did not fit the schedule as well as "
+                "the standard planner, so the standard itinerary was used."
+            )
+        else:
+            planner_mode = "ai"
+    else:
+        itinerary, unscheduled_places = build_daily_schedule(
+            sightseeing_places,
+            trip,
+        )
 
     if unscheduled_places:
         warnings.append(
@@ -1249,6 +1301,10 @@ def generate_optimal_plan(trip):
                 "duration as a tie-breaker."
             ),
             "combinations_considered": combinations_considered,
+        },
+        "planner": {
+            "mode": planner_mode,
+            "provider": ai_provider if planner_mode == "ai" else None,
         },
         "trip": {
             "source": trip.source,
