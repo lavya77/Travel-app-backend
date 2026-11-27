@@ -9,10 +9,13 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """You assign saved sightseeing places to the days of a trip.
 Use only the supplied place IDs. Include every supplied ID exactly once and do
 not invent, alter, or omit IDs. Use every trip day exactly once, with an empty
-place_ids list when appropriate. Keep nearby places together and distribute
-visits sensibly. Return only a JSON object in this shape:
+place_ids list when appropriate. Consider the trip dates, budget, travel mode,
+and supplied place details. Keep nearby places together. Fill each day with
+about 5-6 hours of visits (the sum of visit_minutes) before starting the next
+day; when places run out, leave the remaining later days empty rather than
+spreading one or two places per day. Do not search externally or invent prices. Return only a JSON object
+in this shape:
 {"days":[{"day":1,"place_ids":[12,34]}]}"""
-
 
 class AIResponseError(ValueError):
     pass
@@ -82,6 +85,8 @@ def _prompt_for_trip(trip, places):
         "start_date": trip.start_date.isoformat(),
         "end_date": trip.end_date.isoformat(),
         "travellers": trip.number_of_people,
+        "budget": str(trip.estimated_budget),
+        "travel_mode": trip.travel_mode,
     }
     place_data = [
         {
@@ -91,6 +96,8 @@ def _prompt_for_trip(trip, places):
             "visit_minutes": max(int(place.time_required or 60), 30),
             "latitude": str(place.latitude),
             "longitude": str(place.longitude),
+            "description": (place.description or "")[:160],
+            "estimated_cost": str(place.estimated_cost),
         }
         for place in places
     ]
@@ -100,7 +107,20 @@ def _prompt_for_trip(trip, places):
     )
 
 
-def _cloudflare_schedule(prompt):
+AI_READ_TIMEOUT = 60
+# Below this many seconds the AI rarely answers in time, so skip it.
+AI_MIN_SECONDS = 10
+
+
+def _cloudflare_schedule(prompt, read_timeout=AI_READ_TIMEOUT):
+    return _cloudflare_json_completion(
+        SYSTEM_PROMPT, prompt, 2048, read_timeout=read_timeout
+    )
+
+
+def _cloudflare_json_completion(
+    system_prompt, prompt, max_tokens, read_timeout=AI_READ_TIMEOUT
+):
     endpoint = (
         "https://api.cloudflare.com/client/v4/accounts/"
         f"{settings.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions"
@@ -114,17 +134,17 @@ def _cloudflare_schedule(prompt):
         json={
             "model": settings.CLOUDFLARE_AI_MODEL,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0,
             "reasoning_effort": "low",
-            "max_completion_tokens": 2048,
+            "max_completion_tokens": max_tokens,
             "response_format": {"type": "json_object"},
             "store": False,
             "stream": False,
         },
-        timeout=(5, 30),
+        timeout=(5, read_timeout),
     )
     response.raise_for_status()
     data = response.json()
@@ -139,10 +159,22 @@ def _cloudflare_schedule(prompt):
     return json.loads(content)
 
 
-def build_ai_schedule(trip, places):
-    """Return a validated day assignment, provider name, and fallback warning."""
+def build_ai_schedule(trip, places, time_budget=None):
+    """Return a validated day assignment, provider name, and fallback warning.
+
+    `time_budget` is the seconds left in the web request; the AI call never
+    runs longer than that, so a slow provider cannot get the worker killed.
+    """
     if not places:
         return None, None, None
+
+    if time_budget is not None and time_budget < AI_MIN_SECONDS:
+        return (
+            None,
+            None,
+            "Finding places took too long, so AI was skipped and the "
+            "standard planner was used. Regenerate to try AI again.",
+        )
 
     if not all((
         settings.CLOUDFLARE_ACCOUNT_ID,
@@ -161,7 +193,10 @@ def build_ai_schedule(trip, places):
     prompt = _prompt_for_trip(trip, places)
     provider_name = f"cloudflare-workers-ai:{settings.CLOUDFLARE_AI_MODEL}"
     try:
-        response = _cloudflare_schedule(prompt)
+        read_timeout = AI_READ_TIMEOUT
+        if time_budget is not None:
+            read_timeout = min(AI_READ_TIMEOUT, time_budget - 5)
+        response = _cloudflare_schedule(prompt, read_timeout=read_timeout)
         schedule = validate_ai_schedule(response, place_ids, total_days)
         return schedule, provider_name, None
     except (requests.RequestException, ValueError) as error:

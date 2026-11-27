@@ -1,10 +1,17 @@
 
-from rest_framework import status, viewsets
-from rest_framework.permissions import AllowAny
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-
+import hashlib
 import logging
+
+import requests
+from django.conf import settings
+from django.core.cache import cache
+from rest_framework import status, viewsets
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+
+from config.throttles import ExternalApiThrottle
 
 from .models import Destination, Place, Hotel
 from .serializers import (
@@ -17,9 +24,53 @@ from integrations.save_places import (
     fetch_and_save_city_places,
     fetch_and_save_city_hotels,
 )
+from integrations.geocoding import search_city_suggestions
 
 
 logger = logging.getLogger(__name__)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def city_suggestions(request):
+    query = request.query_params.get("q", "").strip()
+    if len(query) < 2:
+        return Response({"suggestions": []})
+    if len(query) > 100:
+        return Response(
+            {"error": "City search must be 100 characters or fewer."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    api_key = settings.GEOAPIFY_API_KEY.strip()
+    if not api_key:
+        return Response(
+            {"error": "City autocomplete is not configured on the server."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    cache_key = "geoapify-city-suggestions:" + hashlib.sha256(
+        query.casefold().encode("utf-8")
+    ).hexdigest()
+    suggestions = cache.get(cache_key)
+    if suggestions is not None:
+        return Response({"suggestions": suggestions})
+
+    try:
+        suggestions = search_city_suggestions(query, api_key)
+    except (requests.RequestException, ValueError) as error:
+        logger.warning(
+            "Geoapify city suggestions failed (%s)",
+            type(error).__name__,
+        )
+        return Response(
+            {"error": "City suggestions are temporarily unavailable."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    cache.set(cache_key, suggestions, timeout=3600)
+    return Response({"suggestions": suggestions})
 
 
 class DestinationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -38,10 +89,24 @@ class PlaceViewSet(viewsets.ReadOnlyModelViewSet):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([ExternalApiThrottle])
 def search_destination(request):
 
-    city = request.data.get("city", "").strip()
-    state = request.data.get("state", "").strip()
+    if not isinstance(request.data, dict):
+        return Response(
+            {"error": "The request body must be a JSON object."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    city = request.data.get("city", "")
+    state = request.data.get("state", "")
+    if not isinstance(city, str) or not isinstance(state, str):
+        return Response(
+            {"error": "City and state must be text."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    city = city.strip()
+    state = state.strip()
 
     if not city or not state:
         return Response(

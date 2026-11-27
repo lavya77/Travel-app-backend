@@ -31,6 +31,20 @@ ALLOWED_HOSTS = config(
     cast=Csv(),
 )
 
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = config(
+    "DJANGO_SECURE_SSL_REDIRECT", default=False, cast=bool
+)
+SECURE_HSTS_SECONDS = config(
+    "DJANGO_SECURE_HSTS_SECONDS", default=0, cast=int
+)
+SESSION_COOKIE_SECURE = config(
+    "DJANGO_SESSION_COOKIE_SECURE", default=False, cast=bool
+)
+CSRF_COOKIE_SECURE = config(
+    "DJANGO_CSRF_COOKIE_SECURE", default=False, cast=bool
+)
+
 
 # Application definition
 
@@ -51,6 +65,7 @@ INSTALLED_APPS = [
     'trips',
     'destinations',
     'planner',
+    'integrations',
 ]
 
 MIDDLEWARE = [
@@ -72,6 +87,22 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': config('THROTTLE_ANON_RATE', default='120/minute'),
+        'user': config('THROTTLE_USER_RATE', default='240/minute'),
+        # Login/register: limits password guessing.
+        'auth': config('THROTTLE_AUTH_RATE', default='20/minute'),
+        # Endpoints that call OpenStreetMap or Cloudflare AI.
+        'external': config('THROTTLE_EXTERNAL_RATE', default='10/minute'),
+    },
+    # Gunicorn listens on localhost behind one reverse proxy (Tailscale
+    # Funnel), so the client IP is the last X-Forwarded-For hop.
+    'NUM_PROXIES': config('DRF_NUM_PROXIES', default=1, cast=int),
 }
 
 CORS_ALLOWED_ORIGINS = config(
@@ -144,7 +175,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+TIME_ZONE = config("TIME_ZONE", default="Asia/Kolkata")
 
 USE_I18N = True
 
@@ -166,4 +197,6 @@ CLOUDFLARE_AI_MODEL = config(
     'CLOUDFLARE_AI_MODEL',
     default='@cf/qwen/qwen3.8-27b',
 )
+
+GEOAPIFY_API_KEY = config('GEOAPIFY_API_KEY', default='')
 

@@ -2,7 +2,11 @@
 from decimal import Decimal
 
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from rest_framework.exceptions import ValidationError
+
+from integrations.geocoding import same_city
 
 from .models import Trip, TransportOption, Accommodation
 from destinations.models import Hotel
@@ -20,12 +24,43 @@ class TripSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
+    MAX_TRIP_DAYS = 30
+
+    def validate(self, attrs):
+        def current(field):
+            return attrs.get(field, getattr(self.instance, field, None))
+
+        start_date = current('start_date')
+        end_date = current('end_date')
+        errors = {}
+
+        if start_date and end_date:
+            if end_date < start_date:
+                errors['end_date'] = "End date cannot be before start date."
+            elif (end_date - start_date).days + 1 > self.MAX_TRIP_DAYS:
+                errors['end_date'] = (
+                    f"Trips can be at most {self.MAX_TRIP_DAYS} days long."
+                )
+
+        people = current('number_of_people')
+        if people is not None and people < 1:
+            errors['number_of_people'] = "At least one traveller is required."
+
+        budget = current('estimated_budget')
+        if budget is not None and budget < 0:
+            errors['estimated_budget'] = "Budget cannot be negative."
+
+        if errors:
+            raise ValidationError(errors)
+        return attrs
+
 
 class TransportOptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TransportOption
         fields = '__all__'
+        read_only_fields = ['is_estimate']
 
     def validate(self, attrs):
 
@@ -75,6 +110,7 @@ class AccommodationSerializer(serializers.ModelSerializer):
         model = Accommodation
 
         fields = '__all__'
+        read_only_fields = ['is_estimate']
 
     def validate(self, attrs):
 
@@ -108,10 +144,7 @@ class AccommodationSerializer(serializers.ModelSerializer):
                 )
 
             # Ensure the hotel belongs to the trip's destination.
-            if (
-                hotel.destination.name.strip().lower()
-                != trip.destination.strip().lower()
-            ):
+            if not same_city(hotel.destination.name, trip.destination):
                 raise ValidationError(
                     {
                         "hotel": (
@@ -158,10 +191,13 @@ class AccommodationSerializer(serializers.ModelSerializer):
                 mapped_type
             )
 
-            attrs.setdefault(
-                'booking_url',
-                hotel.website
-            )
+            if hotel.website and 'booking_url' not in attrs:
+                try:
+                    URLValidator(schemes=['http', 'https'])(hotel.website)
+                except DjangoValidationError:
+                    pass
+                else:
+                    attrs['booking_url'] = hotel.website
 
         # Require these fields when no saved hotel is selected.
         if not attrs.get(
