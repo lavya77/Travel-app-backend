@@ -2,6 +2,8 @@
 
 Django REST Framework API for the Smart Travel Planner frontend. PostgreSQL is required.
 
+For the current end-to-end architecture and integration behavior, see the [project summary](../SmartTravel-Planner/docs/PROJECT_SUMMARY.md) and [technical details](../SmartTravel-Planner/docs/TECHNICAL_DETAILS.md). The older [API reference](api.md) contains historical endpoint examples.
+
 ## Local setup
 
 Create and activate the backend Conda environment, then install dependencies:
@@ -39,6 +41,30 @@ Paid plan bills usage above the free allocation. Failed requests use the
 existing rule-based planner and add a warning. The backend validates returned
 place IDs and enforces its own travel-time and scheduling rules. Never commit
 API tokens.
+
+## City autocomplete
+
+Set `GEOAPIFY_API_KEY` in the ignored backend `.env` file to enable Indian city
+suggestions while users type. The key is used only by the backend and must not
+be added to frontend code. Suggestions are cached for one hour. If the key is
+not configured or the provider is unavailable, users can still enter a city
+manually.
+
+## Free flight and hotel search
+
+Flight search creates a Google Flights link; hotel search uses the locally
+stored OpenStreetMap listings and provides a Google search link for current
+prices. The app does not call paid flight or hotel APIs, scrape external
+booking sites, or claim that external prices are live inside the app. Booking
+or buying travel on an external site may still cost money. No API key or
+payment method is needed for these search features.
+
+The flight and hotel search endpoints do not invoke Cloudflare AI or fetch
+live offers. Travellers can enter flight details and total quotes from
+Google Flights, or add OpenStreetMap hotels with a quoted nightly price and
+optional checked rating. The planner ranks saved options, prefers combinations
+within budget, and returns one balanced recommendation plus up to three
+alternatives. Quotes remain user-entered and unverified.
 
 ## Test account
 

@@ -88,6 +88,23 @@ class TransportOption(models.Model):
 
     booking_url = models.URLField(blank=True)
 
+    DIRECTIONS = [
+        ('outbound', 'Outbound'),
+        ('return', 'Return'),
+    ]
+
+    direction = models.CharField(
+        max_length=10,
+        choices=DIRECTIONS,
+        default='outbound'
+    )
+
+    # The option the planner should use for this direction.
+    is_selected = models.BooleanField(default=False)
+
+    # True for planner-generated typical fares, False for user quotes.
+    is_estimate = models.BooleanField(default=False)
+
     def __str__(self):
         return f"{self.transport_type}: {self.origin} to {self.destination}"
 
@@ -140,6 +157,11 @@ class Accommodation(models.Model):
     )
 
     booking_url = models.URLField(blank=True)
+
+    is_selected = models.BooleanField(default=False)
+
+    # True for planner-generated typical prices, False for user quotes.
+    is_estimate = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name

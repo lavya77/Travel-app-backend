@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
+from config.throttles import AuthThrottle
 from integrations.views import flight_search, hotel_search
 
 
@@ -25,7 +26,7 @@ urlpatterns = [
     # JWT authentication
     path(
         'api/token/',
-        TokenObtainPairView.as_view(),
+        TokenObtainPairView.as_view(throttle_classes=[AuthThrottle]),
         name='token_obtain_pair'
     ),
     path(

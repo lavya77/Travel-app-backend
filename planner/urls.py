@@ -27,6 +27,13 @@ urlpatterns = [
         name='add-itinerary-item'
     ),
 
+    # Dismiss an optional activity suggestion
+    path(
+        'trips/<int:trip_id>/activity-suggestions/<int:place_id>/dismiss/',
+        views.dismiss_activity_suggestion,
+        name='dismiss-activity-suggestion'
+    ),
+
     # Remove an itinerary activity
     path(
         'trips/<int:trip_id>/itinerary/items/<int:item_id>/',

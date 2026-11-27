@@ -8,6 +8,8 @@
 
 This document helps frontend developers integrate the Smart Travel Planner backend with the React frontend.
 
+> **Current-status note:** This API guide predates destination discovery, itinerary generation and the free link-based flight/hotel search endpoints. For the current endpoint inventory and integration behavior, see the [Technical Details](../SmartTravel-Planner/docs/TECHNICAL_DETAILS.md). The examples below are a historical reference and may not cover current validation or response fields.
+
 ---
 
 ## 1. Authentication APIs
@@ -369,22 +371,9 @@ console.log(data);
 
 ---
 
-## 9. APIs and Features Planned for Future Implementation
+## 9. Current implementation status
 
-The following features are part of the project plan but are not yet available as working API endpoints:
-
-- Cost calculation and budget estimation.
-- Economy, Balanced and Convenience plan generation.
-- Route optimization.
-- Nearby places search using geographical distance.
-- Automatic day-wise itinerary generation.
-- Itinerary customization.
-- Google Maps / Places integration.
-- Flight, train and bus API integration.
-- Hotel recommendation integration.
-- Google Calendar integration.
-
-These endpoints will be documented here once implemented.
+The project now includes destination discovery, saved-place and hotel data, budget-aware plan generation, itinerary editing, and optional AI-assisted day assignment. Generated plans can include `activity_suggestions` with `status: "pending_approval"`. Suggestions are not itinerary stops until the user approves them with `POST /api/planner/trips/{trip_id}/itinerary/items/`; cafes and restaurants are allowed as activities. A user can choose “Not now” with `POST /api/planner/trips/{trip_id}/activity-suggestions/{place_id}/dismiss/`. Suggestions can exceed the remaining known budget and include an estimated overage so the user can decide. Flight and hotel search endpoints create external search links and use saved OpenStreetMap hotel listings; they do not retrieve live fares, room rates or availability. See the [current Technical Details](../SmartTravel-Planner/docs/TECHNICAL_DETAILS.md) for the endpoint list and limitations.
 
 ---
 
